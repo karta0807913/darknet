@@ -12,7 +12,13 @@ option(GPU "darknet cuda option" OFF)
 option(CUDNN "darknet cudnn" OFF)
 option(OPENCV "" OFF)
 option(OPENMP "" OFF)
-set(CMAKE_VERBOSE_MAKEFILE on)
+option(SHARED "build shared library" OFF)
+# set(CMAKE_VERBOSE_MAKEFILE on)
+
+
+if(SHARED)
+    set(BUILD_FLAGS "${BUILD_FLAGS} -fPIC --shared")
+endif(SHARED)
 
 if(OPENCV)
     find_package(OpenCV REQUIRED)
@@ -21,16 +27,15 @@ if(OPENCV)
     list(APPEND LINK_LIBS ${OpenCV_LIBS})
 endif(OPENCV)
 
-
 if(GPU)
     find_package(CUDA REQUIRED)
     include_directories(${CUDA_INCLUDE_DIRS})
-    link_directories(/usr/local/cuda/lib64)
-    list(APPEND LINK_LIBS cuda cudart cublas curand)
+    list(APPEND LINK_LIBS ${CUDA_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CUDA_CUBLAS_LIBRARIES} ${CUDA_cupti_LIBRARY} ${CUDA_curand_LIBRARY} ${CUDA_cusparse_LIBRARY} ${CUDA_nppc_LIBRARY} ${CUDA_npps_LIBRARY} ${CUDA_nvcuvenc_LIBRARY} ${CUDA_nvcuvid_LIBRARY})
     CUDA_INCLUDE_DIRECTORIES(./src/ ./include/)
     set(BUILD_FLAGS "${BUILD_FLAGS} -DGPU")
     if(CUDNN)
         set(BUILD_FLAGS "${BUILD_FLAGS} -DCUDNN")
+        link_directories(/usr/local/cuda/lib64)
         list(APPEND LINK_LIBS cudnn)
     endif(CUDNN)
     file(GLOB DARKNET_CUDA ./src/*.cu)
@@ -40,6 +45,7 @@ if(GPU)
         -gencode arch=compute_50,code=[sm_50,compute_50]
         -gencode arch=compute_52,code=[sm_52,compute_52]
         "--compiler-options \"${BUILD_FLAGS}\"")
+    # make object file
     foreach (target ${DARKNET_CUDA})
         get_filename_component(target_name ${target} NAME)
         string(REGEX MATCH "^([^\\.]*)\\." dummy ${target_name})
@@ -65,15 +71,24 @@ foreach(target ${DARKNET_UTIL})
     set(BUILD_OBJS ${BUILD_OBJS} $<TARGET_OBJECTS:${CMAKE_MATCH_1}.o>)
 endforeach()
 
-add_library(darknet STATIC ${BUILD_OBJS})
+if(SHARED)
+    add_library(darknet SHARED ${BUILD_OBJS})
+else()
+    add_library(darknet STATIC ${BUILD_OBJS})
+endif(SHARED)
 target_link_libraries(darknet ${LINK_LIBS} ${CMAKE_THREAD_LIBS_INIT} m stdc++)
 set_property(TARGET darknet PROPERTY COMPILE_FLAGS ${BUILD_FLAGS})
 
-add_executable(test_exec test.cpp)
-
 file(GLOB DARKNET_EXAMPLE ./examples/*.c)
-add_executable(darknet_out ${DARKNET_EXAMPLE})
-target_link_libraries(darknet_out darknet)
-set_property(TARGET darknet_out PROPERTY COMPILE_FLAGS ${BUILD_FLAGS})
+add_executable(darknet_cli ${DARKNET_EXAMPLE})
+target_link_libraries(darknet_cli darknet)
+set_property(TARGET darknet_cli PROPERTY COMPILE_FLAGS ${BUILD_FLAGS})
 
-# add_executable(
+set(BUILD_FLAGS "${BUILD_FLAGS} --std=c++14")
+# custome folder
+if (OPENCV)
+    file(GLOB CUSTOME ./custome/*.cpp ./custome/*.h ./custome/*.c)
+    add_executable(custome ${CUSTOME})
+    target_link_libraries(custome darknet)
+    set_property(TARGET custome PROPERTY COMPILE_FLAGS ${BUILD_FLAGS})
+endif(OPENCV)
